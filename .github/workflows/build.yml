@@ -1,0 +1,85 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain + target (with components)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-gnu
+          components: "rustfmt,clippy"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          rustup -V
+          rustup toolchain list
+          rustup default
+          rustc -V
+          cargo -V
+          gcc --version || true
+
+      - name: Install mingw for linking
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+
+      - name: Lint with Clippy
+        shell: bash
+        run: |
+          cargo clippy --all-targets --all-features
+
+      - name: Build release (cross for Windows)
+        shell: bash
+        run: |
+          cargo build --locked --release --target=x86_64-pc-windows-gnu
+
+      - name: Show binary size
+        shell: bash
+        run: |
+          ls -lh target/x86_64-pc-windows-gnu/release/mwc-vin-decoder.exe || true
+
+      - name: Collect build info
+        id: collect_info
+        shell: bash
+        env:
+          EXE_NAME: mwc-vin-decoder.exe
+        run: |
+          rv=$(rustc --version 2>&1)
+          date=$(date --iso-8601=seconds)
+          echo "rust_version=$rv" >> $GITHUB_OUTPUT
+          echo "build_date=$date" >> $GITHUB_OUTPUT
+          echo "commit=$GITHUB_SHA" >> $GITHUB_OUTPUT
+          echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+          echo "exe_name=$EXE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mwc-vin-decoder.exe
+          path: target/x86_64-pc-windows-gnu/release/mwc-vin-decoder.exe
+          retention-days: 90
